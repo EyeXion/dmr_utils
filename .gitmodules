@@ -1,0 +1,3 @@
+[submodule "dsd-fme"]
+	path = dsd-fme
+	url = git@github.com:EyeXion/dsd-fme.git

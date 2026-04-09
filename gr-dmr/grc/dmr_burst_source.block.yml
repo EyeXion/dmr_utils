@@ -1,0 +1,27 @@
+id: dmr_burst_source
+label: burst_source
+category: '[dmr]'
+
+templates:
+  imports: from gnuradio import dmr
+  make: dmr.burst_source(${ip}, ${port})
+
+
+parameters:
+- id: ip
+  label: IP Address
+  dtype: string
+  default: "'127.0.0.1'"
+- id: port
+  label: Port
+  dtype: int
+  default: 52010
+
+outputs:
+- label: out
+  dtype: float
+
+asserts:
+- ${port > 0 and port < 65536}
+
+file_format: 1

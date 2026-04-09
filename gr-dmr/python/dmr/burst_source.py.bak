@@ -1,0 +1,143 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+#
+# Copyright 2026 gr-dmr author.
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+
+import numpy as np
+from gnuradio import gr
+import pmt
+import socket
+import threading
+from collections import deque
+
+class burst_source(gr.basic_block):
+    def __init__(self, ip='127.0.0.1', port=52010):
+        # Inherit from gr.basic_block instead of gr.sync_block
+        gr.basic_block.__init__(
+            self,
+            name='DMR Burst Source',
+            in_sig=None, # Source block, no inputs
+            out_sig=[np.float32]
+        )
+        self.ip = ip
+        self.port = port
+        self.map = {0: 0.5, 1: 1.5, 2: -0.5, 3: -1.5}
+        
+        self.burst_queue = deque() 
+        self.current_frame = []
+        
+        # State counters
+        self.mandatory_silence_left = 0
+        self.flushing_done_count = 0 # Total zeros sent since the end of the last data frame
+        
+        self.stop_thread = threading.Event() 
+        self.thread = threading.Thread(target=self.socket_listener, daemon=True)
+        self.thread.start()
+
+    def socket_listener(self):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind((self.ip, self.port))
+        sock.settimeout(0.5)
+        
+        while not self.stop_thread.is_set():
+            try:
+                # Expecting 33 (data) + 2 (silence) = 35 bytes
+                data, addr = sock.recvfrom(1024)
+                if len(data) >= 35:
+                    # 1. Process DMR Symbols (first 33 bytes)
+                    bytes_array = np.frombuffer(data[:33], dtype=np.uint8)
+                    dibits = []
+                    for b in bytes_array:
+                        dibits.append(self.map[(b >> 6) & 0x03])
+                        dibits.append(self.map[(b >> 4) & 0x03])
+                        dibits.append(self.map[(b >> 2) & 0x03])
+                        dibits.append(self.map[b & 0x03])
+                    
+                    frame = [0.0, 0.0] + dibits + [0.0, 0.0] # 136 symbols total
+                    
+                    # 2. Extract Silence Duration (last 2 bytes, Big Endian)
+                    silence_duration = int.from_bytes(data[33:35], byteorder='big')
+                    
+                    # Store both in the queue
+                    self.burst_queue.append((frame, silence_duration))
+            except socket.timeout:
+                continue
+            except Exception:
+                break
+        sock.close()
+
+    # For a basic_block, the function MUST be called general_work
+    def general_work(self, input_items, output_items):
+        out = output_items[0]
+        n_out = len(out)
+        produced = 0
+
+        while produced < n_out:
+            # --- STATE 1: SENDING DATA BURST ---
+            if self.current_frame:
+                n_to_send = min(n_out - produced, len(self.current_frame))
+                out[produced:produced + n_to_send] = self.current_frame[:n_to_send]
+                
+                self.current_frame = self.current_frame[n_to_send:]
+                produced += n_to_send
+                
+                # If frame just finished, reset flushing count to prepare for post-burst silence
+                if not self.current_frame:
+                    self.flushing_done_count = 0
+                continue
+
+            # --- STATE 2: MANDATORY SILENCE (Uninterruptible) ---
+            if self.mandatory_silence_left > 0:
+                n_silence = min(n_out - produced, self.mandatory_silence_left)
+                out[produced:produced + n_silence] = [0.0] * n_silence
+                
+                self.mandatory_silence_left -= n_silence
+                self.flushing_done_count += n_silence
+                produced += n_silence
+                # We do NOT check the queue here; mandatory silence must finish first.
+                continue
+
+            # --- STATE 3: CHECK FOR NEW BURST ---
+            # We only check the queue if current_frame is empty AND mandatory silence is done
+            if self.burst_queue:
+                frame_data, silence_val = self.burst_queue.popleft()
+                self.current_frame = frame_data
+                self.mandatory_silence_left = silence_val
+                
+                # Add tags to the START of the frame we just loaded
+                abs_index = self.nitems_written(0) + produced
+                self.add_item_tag(0, abs_index, pmt.intern("tx_sob"), pmt.from_bool(True))
+                self.add_item_tag(0, abs_index + 136, pmt.intern("tx_eob"), pmt.from_bool(True))
+                # The loop will catch and send 'current_frame' in the next iteration
+                continue
+
+            # --- STATE 4: OPTIONAL FLUSHING (Interruptible) ---
+            # If no data and no mandatory silence, ensure we've sent at least 30 
+            # zeros total since the last burst to clear the FIR filters.
+            if self.flushing_done_count < 30:
+                n_flush = min(n_out - produced, 30 - self.flushing_done_count)
+                out[produced:produced + n_flush] = [0.0] * n_flush
+                
+                self.flushing_done_count += n_flush
+                produced += n_flush
+                # If a burst arrives in the socket during this, the NEXT call to general_work() 
+                # will hit STATE 3 and interrupt this flushing.
+                continue
+
+            # --- STATE 5: IDLE / HALT ---
+            if produced > 0:
+                return produced
+            else:
+                return 0 # All silent, all flushed, nothing in queue: Halt.
+
+        # Note: Since this is a source block with no inputs, we don't need self.consume()
+        return produced
+
+    def stop(self):
+        self.stop_thread.set()
+        self.thread.join(timeout=0.2)
+        return True

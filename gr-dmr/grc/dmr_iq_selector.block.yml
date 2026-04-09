@@ -1,0 +1,25 @@
+id: dmr_iq_selector
+label: iq_selector
+category: '[dmr]'
+
+templates:
+  imports: from gnuradio import dmr
+  make: dmr.iq_selector(${noise_amp})
+
+parameters:
+- id: noise_amp
+  label: Noise Amplitude
+  dtype: float
+  default: 0.0001
+
+inputs:
+- label: data_in
+  dtype: complex
+- label: noise_in
+  dtype: complex
+
+outputs:
+- label: out
+  dtype: complex
+
+file_format: 1
