@@ -447,7 +447,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [464, 488.0]
+    coordinate: [544, 688.0]
     rotation: 0
     state: disabled
 - name: blocks_float_to_short_0
@@ -789,7 +789,7 @@ blocks:
     comment: ''
     header: '0'
     payloadsize: '1024'
-    port: '52052'
+    port: rx_port
     send_eof: 'True'
     type: short
     vlen: '1'
@@ -1609,11 +1609,11 @@ blocks:
   parameters:
     alias: ''
     code: "import threading\nimport time\nfrom subprocess import Popen\n\n\ndef callback_dsd():\n\
-      \  Popen(\"nc -lu 52052 | dsd-fme -i - -Q ../../../../../../../tmp/out\", shell=True)\n\
-      \ndef callback_nc():\n  Popen(\"alacritty -e \\\"bash -c 'nc -lu 52020'\\\"\"\
-      , shell=True)\n\n\ndsd_thread = threading.Thread(target=callback_dsd, daemon=True)\n\
-      dsd_thread.start()\n\n#nc_thread = threading.Thread(target=callback_nc, daemon=True)\n\
-      #nc_thread.start()"
+      \  Popen(\"nc -lu 52052 | dsd-fme   -Z -i - -Q ../../../../../../../tmp/out\"\
+      , shell=True)\n\ndef callback_nc():\n  Popen(\"alacritty -e \\\"bash -c 'nc\
+      \ -lu 52020'\\\"\", shell=True)\n\n\ndsd_thread = threading.Thread(target=callback_dsd,\
+      \ daemon=True)\ndsd_thread.start()\n\n#nc_thread = threading.Thread(target=callback_nc,\
+      \ daemon=True)\n#nc_thread.start()"
     comment: ''
     priority: '0'
     section: main_after_init
@@ -1621,7 +1621,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [464, 1040.0]
+    coordinate: [504, 1024.0]
     rotation: 0
     state: enabled
 - name: soapy_hackrf_sink_0
