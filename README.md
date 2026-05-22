@@ -46,6 +46,7 @@ Le format c'est la sortie du Rx, donc c'est directement reliable
 pour plus de custom, on peut spécifier le silence entre deux bursts en nombre de symboles :
 
 1 03 0F2D124A06E0127C4A80E08044CD5D7F77FD757AC9DC2EB851A886E18CC24FA59F
+
 SILENCE:280
 
 Pour avoir après la trame 280 symboles de silence. ça pourra servir maybe
